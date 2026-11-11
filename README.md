@@ -1,5 +1,7 @@
 # Warcrier Photos bookmarklet
 
+[Open the hosted installer](https://pardelapawel.github.io/warcrier-photos/) — no download or build required.
+
 Use your own miniature photos on Warcrier's printable fighter cards. Each card has its own upload and circular crop preview; ability and reaction thumbnails use the first card's photo for that fighter type. Includes drag-to-position, zoom, local saving, restore-original controls, and print/PDF support. Photos are processed and stored in your browser, without a server upload.
 
 Download and extract this repository (or clone it), then open `install.html` in your browser. The installer and bookmarklet are ready to use; Node.js is only needed when rebuilding after source changes.
