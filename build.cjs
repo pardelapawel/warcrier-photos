@@ -14,7 +14,6 @@ fs.writeFileSync(path.join(dir, 'install.html'), `<!doctype html>
 <main><small>WARCRIER PHOTO BOOKMARKLET · VERSION 2</small>
 <h1>Put your own fighters<br>on the print sheet.</h1>
 <p>A separate photo for every fighter card. Abilities use the first card’s photo for that fighter type.</p>
-<p><small>Updating from version 1? Replace your bookmark with the button below, then reload the Warcrier print page once. Existing saved photos become card 1’s photo.</small></p>
 <p><a class="bookmark" id="bookmark" href="${escape(bookmarklet)}">🌿 Warcrier Photos</a></p>
 <ol><li><strong>Drag the green button to your browser’s bookmarks bar.</strong> Show the bar with Ctrl+Shift+B if needed. Clicking the button on this installer page won’t edit Warcrier.</li>
 <li>Build your roster, then open <a href="https://warcrier.net/printWarband" target="_blank" rel="noopener">Warcrier’s print page</a> in the same browser where you built it. Select <strong>Standard Fighter Cards</strong> and <strong>Show fighter images on abilities</strong>.</li>
