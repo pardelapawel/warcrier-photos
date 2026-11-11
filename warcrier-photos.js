@@ -2,8 +2,8 @@
   'use strict';
   const KEY = '__warcrierPhotosV1';
   if (window[KEY]) {
-    if (window[KEY].version === 2) window[KEY].show();
-    else alert('Reload this print page once, then activate the updated Warcrier Photos bookmark. Your saved photo will become the first card’s photo.');
+    if (window[KEY].version === 3) window[KEY].show();
+    else alert('Reload this print page once, then activate the updated Warcrier Photos bookmark. Your saved photos will be kept.');
     return;
   }
   if (!document.querySelector('.fighter-card')) {
@@ -11,6 +11,7 @@
     return;
   }
   const records = new Map(), originals = new WeakMap();
+  const modes = new Map(), names = new Map(), headings = new WeakMap(), initializedShared = new Set();
   let fighters = new Map(), slots = new Map(), selected = '', photo = null, source = '', crop = { zoom: 1, x: 0.5, y: 0.5 };
   let dragging = null, frame = 0, loadToken = 0, db = null, storageWarning = '', busy = true;
   const host = document.createElement('div');
@@ -27,10 +28,15 @@
     .row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; } .row > * { flex:1; } input[type=file] { width:100%; font-size:12px; }
     canvas { width:100%; aspect-ratio:1; display:block; background:#e5e9e0; border-radius:50%; margin-top:14px; cursor:grab; touch-action:none; } canvas:active { cursor:grabbing; }
     input[type=range] { width:100%; accent-color:#285b40; } .hint { font-size:12px; margin:8px 0; } output { float:right; font-weight:400; } .status { border-top:1px solid #dbe2d8; padding-top:12px; margin:14px 0 0; font-size:12px; min-height:32px; } .notice { background:#edf1e8; padding:9px 11px; border-radius:8px; font-size:12px; }
+    .switch-label { display:flex; align-items:center; gap:10px; font-size:13px; } .switch { appearance:none; flex:none; width:42px; height:24px; border-radius:24px; background:#a9b6aa; position:relative; cursor:pointer; margin:0; } .switch:before { content:''; position:absolute; left:3px; top:3px; width:18px; height:18px; border-radius:50%; background:white; transition:transform .15s; } .switch:checked { background:#285b40; } .switch:checked:before { transform:translateX(18px); } input[type=text] { width:100%; border:1px solid #b9c8bd; border-radius:8px; padding:9px; background:white; color:#20332b; } input:focus-visible { outline:3px solid #e2a548; outline-offset:2px; }
   </style><section class="panel" aria-label="Warcrier photo editor">
-    <header><div><h2>Your fighters, your photos</h2><p>A separate photo for every card.</p></div><button class="close" aria-label="Close photo editor" title="Close; pictures stay applied">×</button></header>
+    <header><div><h2>Your fighters, your photos</h2><p>Choose photos and name your fighters.</p></div><button class="close" aria-label="Close photo editor" title="Close; pictures stay applied">×</button></header>
     <label for="fighter">Fighter card</label><select id="fighter"></select>
     <p class="hint" id="matches"></p>
+    <label for="name">Name on this fighter card</label><input id="name" type="text" maxlength="80" placeholder="Original fighter name">
+    <div class="row"><button id="save-name">Save name</button><button id="reset-name">Restore name</button></div>
+    <label class="switch-label" for="shared"><input class="switch" id="shared" type="checkbox" role="switch">One photo per fighter type</label>
+    <p class="hint" id="photo-mode"></p>
     <label for="upload">Choose a photo</label><input id="upload" type="file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif">
     <canvas id="crop" width="640" height="640" tabindex="0" role="img" aria-label="Crop preview. Drag to reposition, or use arrow keys. Use the sliders for zoom and position."></canvas>
     <p class="hint">Drag to frame your model. Arrow keys also move the crop.</p>
@@ -39,7 +45,7 @@
     <label for="vertical">Vertical position</label><input id="vertical" type="range" min="0" max="1" value="0.5" step="0.001">
     <div class="row"><button id="center">Center crop</button><button id="apply" class="primary" disabled>Apply photo</button></div>
     <div class="row"><button id="reset">Restore original</button><button id="print">Print / save PDF</button></div>
-    <p class="notice">Each card has its own photo. Abilities always use card 1 of that fighter type. Photos stay in this browser.</p>
+    <p class="notice">Photo mode applies only to the selected fighter type. Abilities use the shared photo or card 1’s photo. Photos and names stay in this browser.</p>
     <p id="status" class="status" role="status" aria-live="polite">Loading saved photos…</p>
   </section>`;
   const $ = id => shadow.getElementById(id);
@@ -56,7 +62,8 @@
       const id = link && new URL(link.href, location.href).searchParams.get('id');
       const img = card.querySelector(':scope > img');
       if (!id || !img) return;
-      const name = card.querySelector('h3')?.textContent.replace(/[\u200b-\u200d\ufeff]/g, '').trim() || id;
+      const heading = card.querySelector('h3');
+      const name = (headings.get(heading)?.name || heading?.textContent || id).replace(/[\u200b-\u200d\ufeff]/g, '').trim();
       if (!next.has(id)) next.set(id, { id, name, cards: [], abilities: [] });
       next.get(id).cards.push(img);
     });
@@ -69,13 +76,13 @@
     slots = new Map();
     next.forEach(f => f.cards.forEach((img, index) => {
       const key = index === 0 ? f.id : `${f.id}::${index + 1}`;
-      slots.set(key, { ...f, key, index, img });
+      slots.set(key, { ...f, key, index, img, heading: img.closest('.fighter-card').querySelector('h3') });
     }));
-    const signature = JSON.stringify(Array.from(next.values(), f => [f.id, f.name, f.cards.length, f.abilities.length]));
+    const signature = JSON.stringify(Array.from(slots.values(), f => [f.key, f.name, names.get(f.key), f.abilities.length]));
     if ($('fighter').dataset.signature !== signature) {
       $('fighter').replaceChildren(...Array.from(slots.values(), f => {
         const option = document.createElement('option'); option.value = f.key;
-        option.textContent = `${f.name} · ${f.index + 1}/${f.cards.length}${f.index === 0 ? ' · abilities' : ''}`; return option;
+        option.textContent = `${names.get(f.key) || f.name} · ${f.index + 1}/${f.cards.length}${f.index === 0 ? ' · abilities' : ''}`; return option;
       }));
       $('fighter').dataset.signature = signature;
       if (!slots.has(selected)) selected = slots.keys().next().value || '';
@@ -85,18 +92,40 @@
   }
   function updateMatches() {
     const f = slots.get(selected);
-    $('matches').textContent = f ? `Card ${f.index + 1} of ${f.cards.length}${f.index === 0 ? ` + ${f.abilities.length} ability thumbnail${f.abilities.length === 1 ? '' : 's'}` : ' · abilities use card 1'}` : 'No supported fighter cards found. Use Standard Fighter Cards.';
-    $('reset').disabled = busy || !records.has(selected);
+    const shared = !!f && modes.get(f.id) === true;
+    $('matches').textContent = f ? `Card ${f.index + 1} of ${f.cards.length}${shared ? ` · ${f.name}` : f.index === 0 ? ` + ${f.abilities.length} ability thumbnail${f.abilities.length === 1 ? '' : 's'}` : ' · abilities use card 1'}` : 'No supported fighter cards found. Use Standard Fighter Cards.';
+    $('shared').checked = shared;
+    $('photo-mode').textContent = f ? `${f.name}: ${shared ? 'one photo for all ' + f.cards.length + ' card(s) and matching abilities' : 'one photo per fighter; abilities use card 1'}.` : '';
+    $('reset').disabled = busy || !records.has(photoKey(selected));
     $('apply').disabled = busy || !selected || !photo;
     $('upload').disabled = busy;
     $('fighter').disabled = busy;
+    for (const id of ['shared', 'name', 'save-name']) $(id).disabled = busy || !f;
+    $('reset-name').disabled = busy || !names.has(selected);
+  }
+  function photoKey(key) { const f = slots.get(key); return f && modes.get(f.id) ? `shared:${f.id}` : key; }
+  function applyName(f) {
+    const heading = f.heading; if (!heading) return;
+    const name = names.get(f.key);
+    let original = headings.get(heading);
+    if (name) {
+      if (!original) {
+        const nodes = Array.from(heading.childNodes).filter(n => !(n.nodeType === 1 && n.matches('a.hash-link')));
+        const span = document.createElement('span');
+        original = { nodes, span, name: heading.textContent }; headings.set(heading, original);
+        nodes.forEach(n => n.remove()); heading.prepend(span);
+      }
+      if (original.span.textContent !== name) original.span.textContent = name;
+    } else if (original) {
+      original.span.remove(); heading.prepend(...original.nodes); headings.delete(heading);
+    }
   }
   function applyAll() {
     discover();
     for (const f of fighters.values()) {
       for (const img of [...f.cards, ...f.abilities]) {
         const index = f.cards.indexOf(img);
-        const record = records.get(index > 0 ? `${f.id}::${index + 1}` : f.id);
+        const record = records.get(modes.get(f.id) ? `shared:${f.id}` : index > 0 ? `${f.id}::${index + 1}` : f.id);
         if (record) {
           if (!originals.has(img)) {
             originals.set(img, { src: img.getAttribute('src'), srcset: img.getAttribute('srcset'), sizes: img.getAttribute('sizes') });
@@ -113,6 +142,7 @@
         }
       }
     }
+    slots.forEach(applyName);
     updateMatches();
   }
   function schedule() {
@@ -121,7 +151,7 @@
   const observer = new MutationObserver(mutations => {
     if (mutations.some(m => !host.contains(m.target))) schedule();
   });
-  observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'srcset', 'sizes'] });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['src', 'srcset', 'sizes'] });
   function geometry() {
     if (!photo) return null;
     const side = Math.min(photo.naturalWidth, photo.naturalHeight) / crop.zoom;
@@ -143,7 +173,9 @@
   async function selectFighter() {
     const token = ++loadToken;
     selected = $('fighter').value; photo = null; source = ''; crop = { zoom: 1, x: 0.5, y: 0.5 }; $('upload').value = ''; draw();
-    const record = records.get(selected);
+    $('name').value = names.get(selected) || '';
+    $('name').placeholder = slots.get(selected)?.name || 'Original fighter name';
+    const record = records.get(photoKey(selected));
     if (record) {
       try {
         const image = await loadImage(record.source);
@@ -164,6 +196,34 @@
     } catch { storageWarning = ' Could not save locally; this change lasts for this page session.'; }
   }
   $('fighter').onchange = selectFighter;
+  $('shared').onchange = async () => {
+    const f = slots.get(selected); if (!f || busy) return;
+    const shared = $('shared').checked;
+    busy = true; updateMatches();
+    if (shared && !initializedShared.has(f.id)) {
+      const first = records.get(f.id);
+      if (first) {
+        const record = { ...first, id: `shared:${f.id}` };
+        records.set(record.id, record); await persist(record.id, record);
+      }
+      initializedShared.add(f.id);
+    }
+    modes.set(f.id, shared); applyAll();
+    await persist(`mode:${f.id}`, { id: `mode:${f.id}`, kind: 'mode', shared, initialized: initializedShared.has(f.id) });
+    busy = false; await selectFighter();
+    status(shared ? `Shared photo enabled for ${f.name}. Individual photos are kept for switching back.` : `Individual photos restored for ${f.name}.`);
+  };
+  async function saveName() {
+    if (busy || !selected) return;
+    const key = selected, name = $('name').value.replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (name) names.set(key, name); else names.delete(key);
+    busy = true; applyAll();
+    await persist(`name:${key}`, name ? { id: `name:${key}`, kind: 'name', name } : null);
+    busy = false; $('name').value = name; updateMatches(); status(name ? 'Fighter name saved.' : 'Original fighter name restored.');
+  }
+  $('save-name').onclick = saveName;
+  $('reset-name').onclick = () => { $('name').value = ''; saveName(); };
+  $('name').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); saveName(); } };
   $('upload').onchange = async () => {
     const file = $('upload').files[0]; if (!file) return;
     const token = ++loadToken;
@@ -208,18 +268,17 @@
   };
   $('apply').onclick = async () => {
     if (!photo || !selected || busy) return;
-    const id = selected, f = slots.get(id), out = document.createElement('canvas');
+    const id = photoKey(selected), f = slots.get(selected), out = document.createElement('canvas');
     out.width = out.height = 800;
     const g = geometry(); out.getContext('2d').drawImage(photo, g.sx, g.sy, g.side, g.side, 0, 0, 800, 800);
     const record = { id, source, crop: { ...crop }, result: out.toDataURL('image/png') };
     records.set(id, record); busy = true; applyAll(); await persist(id, record); busy = false; updateMatches();
-    status(f.index === 0 ? `Applied to card 1 and ${f.abilities.length} ability thumbnail(s).` : `Applied to card ${f.index + 1}. Abilities keep card 1’s photo.`);
+    status(modes.get(f.id) ? `Applied to all ${f.cards.length} ${f.name} cards and matching abilities.` : f.index === 0 ? `Applied to card 1 and ${f.abilities.length} ability thumbnail(s).` : `Applied to card ${f.index + 1}. Abilities keep card 1’s photo.`);
   };
   $('reset').onclick = async () => {
     if (busy) return;
-    const id = selected; records.delete(id); busy = true; applyAll(); await persist(id, null); busy = false;
-    if (id === selected) await selectFighter();
-    status('Original artwork restored for this card. Abilities use card 1’s artwork.');
+    const id = photoKey(selected); records.delete(id); busy = true; applyAll(); await persist(id, null); busy = false;
+    await selectFighter(); status('Original artwork restored for the selected photo mode.');
   };
   $('print').onclick = async () => {
     applyAll(); status('Preparing pictures for printing…');
@@ -227,7 +286,7 @@
     status('Ready to print. Choose Save as PDF in the print dialog.'); window.print();
   };
   shadow.querySelector('.close').onclick = () => { host.style.display = 'none'; };
-  window[KEY] = { version: 2, show() { host.style.display = ''; applyAll(); } };
+  window[KEY] = { version: 3, show() { host.style.display = ''; applyAll(); } };
   discover(); draw();
   (async () => {
     try {
@@ -241,7 +300,11 @@
         const request = db.transaction('photos', 'readonly').objectStore('photos').getAll();
         request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
       });
-      saved.forEach(record => { if (record.id && record.result?.startsWith('data:image/png;')) records.set(record.id, record); });
+      saved.forEach(record => {
+        if (record.kind === 'mode') { modes.set(record.id.slice(5), record.shared === true); if (record.initialized) initializedShared.add(record.id.slice(5)); }
+        else if (record.kind === 'name' && typeof record.name === 'string') names.set(record.id.slice(5), record.name.slice(0, 80));
+        else if (record.id && record.result?.startsWith('data:image/png;')) records.set(record.id, record);
+      });
     } catch { storageWarning = ' Local saving is unavailable; photos last for this page session.'; }
     busy = false; applyAll(); await selectFighter();
   })();
