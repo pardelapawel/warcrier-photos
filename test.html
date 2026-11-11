@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Warcrier Photos · Browser checks</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>body{font:16px/1.6 system-ui;background:#eef1e9;color:#243d2d;margin:30px}pre{white-space:pre-wrap;background:#fffef9;padding:20px;border-radius:12px}iframe{width:1200px;height:850px;border:1px solid #bfcbb8}a{color:#285b40}</style>
+<p><a href="install.html">← Installer</a></p><h1>Browser checks</h1><pre id="results" role="status">Running…</pre><iframe id="demo" src="demo.html" title="Test fixture"></iframe>
+<script>
+(async()=>{
+const results=document.getElementById('results'), frame=document.getElementById('demo');
+const lines=[];let failures=0;
+const assert=(condition,name)=>{lines.push(`${condition?'PASS':'FAIL'} · ${name}`);if(!condition)failures++;results.textContent=lines.join('\n')};
+const until=async(fn)=>{for(let i=0;i<1000;i++){if(fn())return;await new Promise(r=>setTimeout(r,30))}throw Error('Timed out waiting for the editor')};
+let win,doc,root;
+const connect=async()=>{await until(()=>frame.contentDocument?.querySelector('#warcrier-photo-editor'));win=frame.contentWindow;doc=frame.contentDocument;root=doc.querySelector('#warcrier-photo-editor').shadowRoot;await until(()=>!root.getElementById('fighter').disabled)};
+const $=id=>root.getElementById(id);
+const cards=()=>Array.from(doc.querySelectorAll('.fighter-card > img'));
+const thumbs=()=>Array.from(doc.querySelectorAll('.ability-fighter-pics img'));
+const input=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new win.Event('input',{bubbles:true}))};
+const choose=async(value)=>{$('fighter').value=value;$('fighter').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>!$('fighter').disabled)};
+try{
+await connect();
+// Clear each fixture card so repeated runs start from originals.
+for(const key of Array.from($('fighter').options,o=>o.value)){await choose(key);if(!$('reset').disabled){$('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled)}}
+await choose('9722eb47');
+const originalCard=cards()[0].src, originalThumb=thumbs()[0].getAttribute('src'), unrelated=doc.getElementById('unrelated').src;
+assert($('fighter').options.length===3,'List every individual fighter card, including duplicates');
+assert($('matches').textContent==='Card 1 of 2 + 2 ability thumbnails','Only the first card controls matching ability portraits');
+assert(win.getComputedStyle($('crop')).borderTopLeftRadius==='50%','Crop preview is circular');
+const picture=doc.createElement('canvas');picture.width=1200;picture.height=600;const pc=picture.getContext('2d');pc.fillStyle='red';pc.fillRect(0,0,600,600);pc.fillStyle='blue';pc.fillRect(600,0,600,600);
+const blob=await new Promise(r=>picture.toBlob(r,'image/png'));
+const transfer=new win.DataTransfer();transfer.items.add(new win.File([blob],'crop-test.png',{type:'image/png'}));$('upload').files=transfer.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));
+await until(()=>!$('apply').disabled);
+input('horizontal',0);input('zoom',2);input('vertical',0.4);
+const pixel=$('crop').getContext('2d').getImageData(320,320,1,1).data;
+assert(pixel[0]===255 && pixel[2]===0,'Zoom and horizontal crop produce the expected red image');
+$('apply').click();await until(()=>!$('apply').disabled);
+const result=cards()[0].src;
+assert(result.startsWith('data:image/png;'),'Apply produces an embedded PNG');
+assert(cards()[1].src===originalCard && thumbs()[0].src===result && thumbs()[2].src===result,'First card updates every matching ability while leaving duplicate cards independent');
+assert(cards()[2].src===originalCard && thumbs()[1].src!==result && doc.getElementById('unrelated').src===unrelated,'Other fighter types and unrelated icons stay unchanged');
+assert(cards()[0].getBoundingClientRect().width===150 && thumbs()[0].getBoundingClientRect().width===60,'Original card and ability portrait dimensions are preserved');
+await choose('9722eb47::2');
+assert($('matches').textContent==='Card 2 of 2 · abilities use card 1' && $('apply').disabled,'Second card starts with its own empty photo slot');
+const transfer2=new win.DataTransfer();transfer2.items.add(new win.File([blob],'second-card.png',{type:'image/png'}));$('upload').files=transfer2.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>!$('apply').disabled);
+input('horizontal',1);input('zoom',2);$('apply').click();await until(()=>!$('apply').disabled);
+const secondResult=cards()[1].src;
+assert(secondResult!==result && cards()[0].src===result && thumbs()[0].src===result && thumbs()[2].src===result,'Second card gets a different photo and abilities keep the first photo');
+doc.getElementById('rerender').click();await until(()=>cards()[0].src===result && thumbs()[2].src===result && cards()[1].src===secondResult);
+assert(cards()[1].src===secondResult,'Page redraw preserves separate photos for duplicate cards');
+var previousDocument = frame.contentDocument; frame.contentWindow.location.reload();await until(()=>frame.contentDocument !== previousDocument && frame.contentDocument.readyState === 'complete');await connect();await until(()=>cards()[0].src===result && !$('apply').disabled);
+assert(thumbs()[0].src===result && Number($('zoom').value)===2 && Number($('vertical').value)===0.4,'Saved image, original source and editable crop survive reload');
+assert(cards()[1].src===secondResult,'Second card also restores its own saved photo');
+root.querySelector('.close').click();assert(doc.getElementById('warcrier-photo-editor').style.display==='none','Closing hides only the editor');
+doc.getElementById('reopen').click();assert(doc.getElementById('warcrier-photo-editor').style.display==='' && cards()[0].src===result,'Reactivation reopens the existing editor and keeps pictures');
+$('reset').click();await until(()=>$('reset').disabled && !root.getElementById('fighter').disabled);
+assert(cards()[0].src===originalCard && cards()[1].src===secondResult && thumbs()[0].getAttribute('src')===originalThumb,'Resetting card 1 restores abilities and preserves card 2');
+await choose('9722eb47::2');await until(()=>!$('apply').disabled);$('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled);
+assert(cards()[1].src===originalCard && thumbs()[0].getAttribute('src')===originalThumb,'Resetting card 2 does not affect abilities');
+var previousDocument = frame.contentDocument; frame.contentWindow.location.reload();await until(()=>frame.contentDocument !== previousDocument && frame.contentDocument.readyState === 'complete');await connect();
+assert(cards()[0].src===originalCard && $('reset').disabled,'Reset also removes the saved replacement');
+const bad=new win.DataTransfer();bad.items.add(new win.File(['not an image'],'broken.png',{type:'image/png'}));$('upload').files=bad.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>$('status').textContent.includes('Could not open'));
+assert($('apply').disabled,'Invalid upload is handled without changing artwork');
+const css=Array.from(doc.querySelectorAll('style')).some(s=>s.textContent.includes('@media print')&&s.textContent.includes('#warcrier-photo-editor'));
+assert(css,'Editor has a print-only hide rule');
+// Run the actual encoded bookmark URL inside the fixture to verify bookmarklet packaging.
+const installer=await (await fetch('install.html')).text();const parsed=new DOMParser().parseFromString(installer,'text/html');
+const anchor=doc.createElement('a');anchor.href=parsed.getElementById('bookmark').getAttribute('href');anchor.textContent='Activate packaged bookmarklet';doc.body.append(anchor);root.querySelector('.close').click();anchor.click();await until(()=>doc.getElementById('warcrier-photo-editor').style.display==='');
+assert(doc.querySelectorAll('#warcrier-photo-editor').length===1,'Packaged javascript bookmark URL executes and reuses the existing editor');
+}catch(e){assert(false,e.message)}
+results.textContent+=`\n\n${failures?failures+' FAILED':'ALL CHECKS PASSED'}`;
+document.title=failures?'FAIL · Warcrier Photos':'PASS · Warcrier Photos';
+})();
+</script></html>
