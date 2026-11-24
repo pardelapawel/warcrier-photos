@@ -27,7 +27,7 @@
     button:disabled { opacity:.45; cursor:default; } .primary { background:#285b40; color:white; border-color:#285b40; } .primary:hover { background:#1b442d; } .close { padding:2px 9px; font-size:23px; }
     label { display:block; font-weight:600; margin:12px 0 6px; } select { width:100%; padding:9px; border:1px solid #b9c8bd; background:white; border-radius:8px; color:#20332b; }
     .row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; } .row > * { flex:1; } input[type=file] { width:100%; font-size:12px; }
-    canvas { width:100%; aspect-ratio:1; display:block; background:#e5e9e0; border-radius:50%; margin-top:14px; cursor:grab; touch-action:none; } canvas:active { cursor:grabbing; }
+    canvas { width:100%; aspect-ratio:1; display:block; background:#e5e9e0; border-radius:50%; margin-top:14px; cursor:grab; touch-action:none; } canvas:active { cursor:grabbing; } canvas.empty { cursor:pointer; }
     input[type=range] { width:100%; accent-color:#285b40; } .hint { font-size:12px; margin:8px 0; } output { float:right; font-weight:400; } .status { border-top:1px solid #dbe2d8; padding-top:12px; margin:14px 0 0; font-size:12px; min-height:32px; } .notice { background:#edf1e8; padding:9px 11px; border-radius:8px; font-size:12px; }
     .switch-label { display:flex; align-items:center; gap:10px; font-size:13px; } .switch { appearance:none; flex:none; width:42px; height:24px; border-radius:24px; background:#a9b6aa; position:relative; cursor:pointer; margin:0; } .switch:before { content:''; position:absolute; left:3px; top:3px; width:18px; height:18px; border-radius:50%; background:white; transition:transform .15s; } .switch:checked { background:#285b40; } .switch:checked:before { transform:translateX(18px); } input[type=text] { width:100%; border:1px solid #b9c8bd; border-radius:8px; padding:9px; background:white; color:#20332b; } input:focus-visible { outline:3px solid #e2a548; outline-offset:2px; }
   </style><section class="panel" aria-label="Warcrier photo editor">
@@ -161,6 +161,7 @@
   }
   function draw() {
     ctx.clearRect(0, 0, 640, 640); ctx.fillStyle = '#e5e9e0'; ctx.fillRect(0, 0, 640, 640);
+    canvas.classList.toggle('empty', !photo);
     const g = geometry();
     if (g) ctx.drawImage(photo, g.sx, g.sy, g.side, g.side, 0, 0, 640, 640);
     else { ctx.fillStyle = '#627766'; ctx.font = '26px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Choose a photo to start', 320, 325); }
@@ -251,8 +252,10 @@
     $(id).oninput = () => { crop[key] = Number($(id).value); draw(); };
   }
   $('center').onclick = () => { crop = { zoom: 1, x: 0.5, y: 0.5 }; draw(); };
+  // With no photo loaded, the preview's "Choose a photo to start" prompt opens the file picker.
+  const browse = () => { if (!$('upload').disabled) $('upload').click(); };
   canvas.onpointerdown = e => {
-    if (!photo) return;
+    if (!photo) { browse(); return; }
     dragging = { x: e.clientX, y: e.clientY, crop: { ...crop } }; canvas.setPointerCapture(e.pointerId);
   };
   canvas.onpointermove = e => {
@@ -265,6 +268,7 @@
   canvas.onpointerup = canvas.onpointercancel = canvas.onlostpointercapture = () => { dragging = null; };
   canvas.onkeydown = e => {
     const moves = { ArrowLeft: ['x', .02], ArrowRight: ['x', -.02], ArrowUp: ['y', .02], ArrowDown: ['y', -.02] };
+    if (!photo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); browse(); return; }
     if (!moves[e.key] || !photo) return;
     e.preventDefault(); const [key, delta] = moves[e.key]; crop[key] = clamp(crop[key] + delta * (e.shiftKey ? 5 : 1)); draw();
   };

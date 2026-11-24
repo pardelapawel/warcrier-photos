@@ -28,10 +28,15 @@ const originalCard=cards()[0].src, originalThumb=thumbs()[0].getAttribute('src')
 assert($('fighter').options.length===3,'List every individual fighter card, including duplicates');
 assert($('matches').textContent==='Card 1 of 2 + 2 ability thumbnails','Only the first card controls matching ability portraits');
 assert(win.getComputedStyle($('crop')).borderTopLeftRadius==='50%','Crop preview is circular');
+let browsed=0;const countBrowse=e=>{browsed++;e.preventDefault()};$('upload').addEventListener('click',countBrowse);
+$('crop').dispatchEvent(new win.PointerEvent('pointerdown',{bubbles:true,pointerId:1}));$('crop').dispatchEvent(new win.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+assert(browsed===2 && $('crop').classList.contains('empty'),'Clicking or pressing Enter on the empty "Choose a photo" preview opens the file picker');
 const picture=doc.createElement('canvas');picture.width=1200;picture.height=600;const pc=picture.getContext('2d');pc.fillStyle='red';pc.fillRect(0,0,600,600);pc.fillStyle='blue';pc.fillRect(600,0,600,600);
 const blob=await new Promise(r=>picture.toBlob(r,'image/png'));
 const transfer=new win.DataTransfer();transfer.items.add(new win.File([blob],'crop-test.png',{type:'image/png'}));$('upload').files=transfer.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));
 await until(()=>!$('apply').disabled);
+$('crop').dispatchEvent(new win.PointerEvent('pointerdown',{bubbles:true,pointerId:1}));$('upload').removeEventListener('click',countBrowse);
+assert(browsed===2 && !$('crop').classList.contains('empty'),'Once a photo is loaded, clicking the preview drags instead of opening the picker');
 input('horizontal',0);input('zoom',2);input('vertical',0.4);
 const pixel=$('crop').getContext('2d').getImageData(320,320,1,1).data;
 assert(pixel[0]===255 && pixel[2]===0,'Zoom and horizontal crop produce the expected red image');
