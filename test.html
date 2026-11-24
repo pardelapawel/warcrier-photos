@@ -21,9 +21,9 @@ try{
 await connect();
 // Clear only the known local demo keys; Warcrier uses a different origin.
 const fixtureDb=await new Promise((resolve,reject)=>{const r=win.indexedDB.open('warcrier-custom-photos-v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});
-await new Promise((resolve,reject)=>{const tx=fixtureDb.transaction('photos','readwrite');for(const key of ['9722eb47','9722eb47::2','fa35c150']){tx.objectStore('photos').delete(key);tx.objectStore('photos').delete('name:'+key)}for(const key of ['9722eb47','fa35c150']){tx.objectStore('photos').delete('mode:'+key);tx.objectStore('photos').delete('shared:'+key)}tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});fixtureDb.close();
+await new Promise((resolve,reject)=>{const tx=fixtureDb.transaction('photos','readwrite');for(const key of ['9722eb47','9722eb47::2','fa35c150','fighter:spite-revenant','fighter:spite-revenant::2','fighter:kurnoth hunter with kurnoth scythe']){tx.objectStore('photos').delete(key);tx.objectStore('photos').delete('name:'+key)}for(const key of ['9722eb47','fa35c150','fighter:spite-revenant','fighter:kurnoth hunter with kurnoth scythe']){tx.objectStore('photos').delete('mode:'+key);tx.objectStore('photos').delete('shared:'+key)}tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});fixtureDb.close();
 var previousDocument=frame.contentDocument;win.location.reload();await until(()=>frame.contentDocument!==previousDocument && frame.contentDocument.readyState==='complete');await connect();
-await choose('9722eb47');
+await choose('fighter:spite-revenant');
 const originalCard=cards()[0].src, originalThumb=thumbs()[0].getAttribute('src'), unrelated=doc.getElementById('unrelated').src;
 assert($('fighter').options.length===3,'List every individual fighter card, including duplicates');
 assert($('matches').textContent==='Card 1 of 2 + 2 ability thumbnails','Only the first card controls matching ability portraits');
@@ -41,7 +41,7 @@ assert(result.startsWith('data:image/png;'),'Apply produces an embedded PNG');
 assert(cards()[1].src===originalCard && thumbs()[0].src===result && thumbs()[2].src===result,'First card updates every matching ability while leaving duplicate cards independent');
 assert(cards()[2].src===originalCard && thumbs()[1].src!==result && doc.getElementById('unrelated').src===unrelated,'Other fighter types and unrelated icons stay unchanged');
 assert(cards()[0].getBoundingClientRect().width===150 && thumbs()[0].getBoundingClientRect().width===60,'Original card and ability portrait dimensions are preserved');
-await choose('9722eb47::2');
+await choose('fighter:spite-revenant::2');
 assert($('matches').textContent==='Card 2 of 2 · abilities use card 1' && $('apply').disabled,'Second card starts with its own empty photo slot');
 const transfer2=new win.DataTransfer();transfer2.items.add(new win.File([blob],'second-card.png',{type:'image/png'}));$('upload').files=transfer2.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>!$('apply').disabled);
 input('horizontal',1);input('zoom',2);$('apply').click();await until(()=>!$('apply').disabled);
@@ -49,10 +49,10 @@ const secondResult=cards()[1].src;
 assert(secondResult!==result && cards()[0].src===result && thumbs()[0].src===result && thumbs()[2].src===result,'Second card gets a different photo and abilities keep the first photo');
 await toggleShared(true);
 assert(cards()[0].src===result && cards()[1].src===result && thumbs()[2].src===result,'Shared mode starts with card 1 photo and updates only that fighter type');
-await choose('fa35c150');assert(!$('shared').checked,'Another fighter type retains its own photo mode');await toggleShared(true);
-await choose('9722eb47');await until(()=>!$('apply').disabled);assert($('shared').checked,'Changing another type does not change this type’s mode');
+await choose('fighter:kurnoth hunter with kurnoth scythe');assert(!$('shared').checked,'Another fighter type retains its own photo mode');await toggleShared(true);
+await choose('fighter:spite-revenant');await until(()=>!$('apply').disabled);assert($('shared').checked,'Changing another type does not change this type’s mode');
 const hashLink=doc.querySelector('.fighter-card h3 .hash-link');
-await saveLabel('Oak <b>One</b>');await choose('9722eb47::2');await saveLabel('Oak Two');
+await saveLabel('Oak <b>One</b>');await choose('fighter:spite-revenant::2');await saveLabel('Oak Two');
 assert(doc.querySelectorAll('.fighter-card h3')[0].textContent.startsWith('Oak <b>One</b>') && doc.querySelectorAll('.fighter-card h3')[1].textContent.startsWith('Oak Two'),'Each duplicate can have its own name even in shared-photo mode');
 assert(!doc.querySelector('.fighter-card h3 b') && doc.querySelector('.fighter-card h3 .hash-link')===hashLink && doc.querySelector('.fighter-card p').textContent==='Demonstration fighter card','Names render as plain text while preserving heading links and card content');
 await until(()=>!$('apply').disabled);input('horizontal',1);$('apply').click();await until(()=>!$('apply').disabled);const sharedResult=cards()[0].src;
@@ -61,8 +61,8 @@ var previousDocument=frame.contentDocument;win.location.reload();await until(()=
 assert($('shared').checked && cards()[1].src===sharedResult && doc.querySelectorAll('.fighter-card h3')[1].textContent.startsWith('Oak Two'),'Shared mode and individual names persist across reload');
 $('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled);
 assert(cards()[0].src===originalCard && cards()[1].src===originalCard && thumbs()[0].getAttribute('src')===originalThumb && doc.querySelectorAll('.fighter-card h3')[1].textContent.startsWith('Oak Two'),'Resetting a shared photo restores all matching artwork while keeping names');
-await choose('fa35c150');assert($('shared').checked,'Other fighter type mode persists independently');await toggleShared(false);
-await choose('9722eb47');await toggleShared(false);
+await choose('fighter:kurnoth hunter with kurnoth scythe');assert($('shared').checked,'Other fighter type mode persists independently');await toggleShared(false);
+await choose('fighter:spite-revenant');await toggleShared(false);
 assert(cards()[0].src===result && cards()[1].src===secondResult && thumbs()[0].src===result,'Switching back restores both individual photos and first-card ability image');
 await toggleShared(true);assert(cards()[0].src===originalCard && cards()[1].src===originalCard,'A reset shared photo stays reset when the mode is enabled again');await toggleShared(false);
 doc.getElementById('rerender').click();await until(()=>cards()[0].src===result && thumbs()[2].src===result && cards()[1].src===secondResult);
@@ -76,11 +76,32 @@ doc.getElementById('reopen').click();assert(doc.getElementById('warcrier-photo-e
 $('reset').click();await until(()=>$('reset').disabled && !root.getElementById('fighter').disabled);
 assert(cards()[0].src===originalCard && cards()[1].src===secondResult && thumbs()[0].getAttribute('src')===originalThumb,'Resetting card 1 restores abilities and preserves card 2');
 $('reset-name').click();await until(()=>!$('name').disabled);assert(doc.querySelector('.fighter-card h3').textContent.startsWith('Spite-Revenant') && doc.querySelectorAll('.fighter-card h3')[1].textContent.startsWith('Oak Two'),'Restoring one fighter name leaves the other name intact');
-await choose('9722eb47::2');await until(()=>!$('apply').disabled);$('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled);
+await choose('fighter:spite-revenant::2');await until(()=>!$('apply').disabled);$('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled);
 $('reset-name').click();await until(()=>!$('name').disabled);
 assert(cards()[1].src===originalCard && thumbs()[0].getAttribute('src')===originalThumb,'Resetting card 2 does not affect abilities');
 var previousDocument = frame.contentDocument; frame.contentWindow.location.reload();await until(()=>frame.contentDocument !== previousDocument && frame.contentDocument.readyState === 'complete');await connect();
 assert(cards()[0].src===originalCard && $('reset').disabled,'Reset also removes the saved replacement');
+// Photos are keyed by fighter name: a card for the same fighter in another warband (even with a different ID) gets the saved photo.
+await choose('fighter:spite-revenant');const t3=new win.DataTransfer();t3.items.add(new win.File([blob],'by-name.png',{type:'image/png'}));$('upload').files=t3.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>!$('apply').disabled);$('apply').click();await until(()=>!$('apply').disabled);const byName=cards()[0].src;
+doc.querySelectorAll('a.customise').forEach(a=>{if(a.href.includes('9722eb47'))a.href=a.href.replace('9722eb47','0000aaaa')});
+var previousDocument=frame.contentDocument;win.location.reload();await until(()=>frame.contentDocument!==previousDocument && frame.contentDocument.readyState==='complete');
+frame.contentDocument.querySelectorAll('a.customise').forEach(a=>{if(a.href.includes('9722eb47'))a.href=a.href.replace('9722eb47','0000aaaa')});await connect();await until(()=>cards()[0].src===byName);
+assert(cards()[0].src===byName && $('fighter').value==='fighter:spite-revenant','A different fighter ID with the same fighter name loads the saved photo');
+$('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled);
+// Four copies of the same fighter can each keep their own photo, also after a reload.
+const addBroodkin=()=>{const box=doc.querySelector('#sheet .cards');for(let i=0;i<4;i++)box.insertAdjacentHTML('beforeend',`<div class="fighter-card-wrap"><div class="fighter-card single size-s"><h3>Broodkin<a class="hash-link"></a></h3><img src="${cards()[0].getAttribute('src')}"><p>Demonstration fighter card</p></div><a class="customise btn" href="https://barrysheppard.github.io/warcry-card-creator/index.html?id=b00dk1n0">Customise Card</a></div>`);win.__warcrierPhotosV1.show()};
+const broodkin=()=>cards().slice(3,7).map(img=>img.src);
+addBroodkin();await until(()=>$('fighter').querySelector("option[value='fighter:broodkin::4']"));
+for(const [i,color] of ['red','green','blue','orange'].entries()){
+  const c=doc.createElement('canvas');c.width=c.height=100;const x=c.getContext('2d');x.fillStyle=color;x.fillRect(0,0,100,100);const b=await new Promise(r=>c.toBlob(r,'image/png'));
+  await choose(i?`fighter:broodkin::${i+1}`:'fighter:broodkin');const t=new win.DataTransfer();t.items.add(new win.File([b],color+'.png',{type:'image/png'}));$('upload').files=t.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>!$('apply').disabled);$('apply').click();await until(()=>!$('apply').disabled);
+}
+const fourPhotos=broodkin();
+assert(new Set(fourPhotos).size===4 && fourPhotos.every(src=>src.startsWith('data:image/png;')),'Four fighters of the same type each show their own photo');
+var previousDocument=frame.contentDocument;win.location.reload();await until(()=>frame.contentDocument!==previousDocument && frame.contentDocument.readyState==='complete');await connect();
+addBroodkin();await until(()=>broodkin().every((src,i)=>src===fourPhotos[i]));
+assert(broodkin().every((src,i)=>src===fourPhotos[i]),'Each of the four photos is restored to its own card after reload');
+for(let i=0;i<4;i++){await choose(i?`fighter:broodkin::${i+1}`:'fighter:broodkin');await until(()=>!$('apply').disabled);$('reset').click();await until(()=>$('reset').disabled && !$('fighter').disabled)}
 const bad=new win.DataTransfer();bad.items.add(new win.File(['not an image'],'broken.png',{type:'image/png'}));$('upload').files=bad.files;$('upload').dispatchEvent(new win.Event('change',{bubbles:true}));await until(()=>$('status').textContent.includes('Could not open'));
 assert($('apply').disabled,'Invalid upload is handled without changing artwork');
 const css=Array.from(doc.querySelectorAll('style')).some(s=>s.textContent.includes('@media print')&&s.textContent.includes('#warcrier-photo-editor'));

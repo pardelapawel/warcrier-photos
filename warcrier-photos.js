@@ -2,7 +2,7 @@
   'use strict';
   const KEY = '__warcrierPhotosV1';
   if (window[KEY]) {
-    if (window[KEY].version === 3) window[KEY].show();
+    if (window[KEY].version === 4) window[KEY].show();
     else alert('Reload this print page once, then activate the updated Warcrier Photos bookmark. Your saved photos will be kept.');
     return;
   }
@@ -14,6 +14,7 @@
   const modes = new Map(), names = new Map(), headings = new WeakMap(), initializedShared = new Set();
   let fighters = new Map(), slots = new Map(), selected = '', photo = null, source = '', crop = { zoom: 1, x: 0.5, y: 0.5 };
   let dragging = null, frame = 0, loadToken = 0, db = null, storageWarning = '', busy = true;
+  const normalize = text => text.replace(/[\u200b-\u200d\ufeff]/g, '').replace(/\s+/g, ' ').trim();
   const host = document.createElement('div');
   host.id = 'warcrier-photo-editor';
   host.style.cssText = 'position:fixed;top:12px;right:12px;width:min(390px,calc(100vw - 24px));z-index:2147483647;color-scheme:light';
@@ -63,8 +64,9 @@
       const img = card.querySelector(':scope > img');
       if (!id || !img) return;
       const heading = card.querySelector('h3');
-      const name = (headings.get(heading)?.name || heading?.textContent || id).replace(/[\u200b-\u200d\ufeff]/g, '').trim();
-      if (!next.has(id)) next.set(id, { id, name, cards: [], abilities: [] });
+      const name = normalize(headings.get(heading)?.name || heading?.textContent || id);
+      // Saved data is keyed by the fighter's original Warcrier name, so it follows the fighter into any warband.
+      if (!next.has(id)) next.set(id, { id, name, base: `fighter:${name.toLowerCase()}`, cards: [], abilities: [] });
       next.get(id).cards.push(img);
     });
     document.querySelectorAll('.ability-fighter-pics img').forEach(img => {
@@ -75,7 +77,7 @@
     fighters = next;
     slots = new Map();
     next.forEach(f => f.cards.forEach((img, index) => {
-      const key = index === 0 ? f.id : `${f.id}::${index + 1}`;
+      const key = index === 0 ? f.base : `${f.base}::${index + 1}`;
       slots.set(key, { ...f, key, index, img, heading: img.closest('.fighter-card').querySelector('h3') });
     }));
     const signature = JSON.stringify(Array.from(slots.values(), f => [f.key, f.name, names.get(f.key), f.abilities.length]));
@@ -92,7 +94,7 @@
   }
   function updateMatches() {
     const f = slots.get(selected);
-    const shared = !!f && modes.get(f.id) === true;
+    const shared = !!f && modes.get(f.base) === true;
     $('matches').textContent = f ? `Card ${f.index + 1} of ${f.cards.length}${shared ? ` · ${f.name}` : f.index === 0 ? ` + ${f.abilities.length} ability thumbnail${f.abilities.length === 1 ? '' : 's'}` : ' · abilities use card 1'}` : 'No supported fighter cards found. Use Standard Fighter Cards.';
     $('shared').checked = shared;
     $('photo-mode').textContent = f ? `${f.name}: ${shared ? 'one photo for all ' + f.cards.length + ' card(s) and matching abilities' : 'one photo per fighter; abilities use card 1'}.` : '';
@@ -103,7 +105,7 @@
     for (const id of ['shared', 'name', 'save-name']) $(id).disabled = busy || !f;
     $('reset-name').disabled = busy || !names.has(selected);
   }
-  function photoKey(key) { const f = slots.get(key); return f && modes.get(f.id) ? `shared:${f.id}` : key; }
+  function photoKey(key) { const f = slots.get(key); return f && modes.get(f.base) ? `shared:${f.base}` : key; }
   function applyName(f) {
     const heading = f.heading; if (!heading) return;
     const name = names.get(f.key);
@@ -125,7 +127,7 @@
     for (const f of fighters.values()) {
       for (const img of [...f.cards, ...f.abilities]) {
         const index = f.cards.indexOf(img);
-        const record = records.get(modes.get(f.id) ? `shared:${f.id}` : index > 0 ? `${f.id}::${index + 1}` : f.id);
+        const record = records.get(modes.get(f.base) ? `shared:${f.base}` : index > 0 ? `${f.base}::${index + 1}` : f.base);
         if (record) {
           if (!originals.has(img)) {
             originals.set(img, { src: img.getAttribute('src'), srcset: img.getAttribute('srcset'), sizes: img.getAttribute('sizes') });
@@ -200,16 +202,16 @@
     const f = slots.get(selected); if (!f || busy) return;
     const shared = $('shared').checked;
     busy = true; updateMatches();
-    if (shared && !initializedShared.has(f.id)) {
-      const first = records.get(f.id);
+    if (shared && !initializedShared.has(f.base)) {
+      const first = records.get(f.base);
       if (first) {
-        const record = { ...first, id: `shared:${f.id}` };
+        const record = { ...first, id: `shared:${f.base}` };
         records.set(record.id, record); await persist(record.id, record);
       }
-      initializedShared.add(f.id);
+      initializedShared.add(f.base);
     }
-    modes.set(f.id, shared); applyAll();
-    await persist(`mode:${f.id}`, { id: `mode:${f.id}`, kind: 'mode', shared, initialized: initializedShared.has(f.id) });
+    modes.set(f.base, shared); applyAll();
+    await persist(`mode:${f.base}`, { id: `mode:${f.base}`, kind: 'mode', shared, initialized: initializedShared.has(f.base) });
     busy = false; await selectFighter();
     status(shared ? `Shared photo enabled for ${f.name}. Individual photos are kept for switching back.` : `Individual photos restored for ${f.name}.`);
   };
@@ -273,7 +275,7 @@
     const g = geometry(); out.getContext('2d').drawImage(photo, g.sx, g.sy, g.side, g.side, 0, 0, 800, 800);
     const record = { id, source, crop: { ...crop }, result: out.toDataURL('image/png') };
     records.set(id, record); busy = true; applyAll(); await persist(id, record); busy = false; updateMatches();
-    status(modes.get(f.id) ? `Applied to all ${f.cards.length} ${f.name} cards and matching abilities.` : f.index === 0 ? `Applied to card 1 and ${f.abilities.length} ability thumbnail(s).` : `Applied to card ${f.index + 1}. Abilities keep card 1’s photo.`);
+    status(modes.get(f.base) ? `Applied to all ${f.cards.length} ${f.name} cards and matching abilities.` : f.index === 0 ? `Applied to card 1 and ${f.abilities.length} ability thumbnail(s).` : `Applied to card ${f.index + 1}. Abilities keep card 1’s photo.`);
   };
   $('reset').onclick = async () => {
     if (busy) return;
@@ -286,7 +288,7 @@
     status('Ready to print. Choose Save as PDF in the print dialog.'); window.print();
   };
   shadow.querySelector('.close').onclick = () => { host.style.display = 'none'; };
-  window[KEY] = { version: 3, show() { host.style.display = ''; applyAll(); } };
+  window[KEY] = { version: 4, show() { host.style.display = ''; applyAll(); } };
   discover(); draw();
   (async () => {
     try {
@@ -296,6 +298,8 @@
         request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
         request.onblocked = () => reject(new Error('Storage is blocked'));
       });
+      // Ask the browser not to evict saved photos when it clears storage under pressure or after inactivity.
+      navigator.storage?.persist?.().catch(() => {});
       const saved = await new Promise((resolve, reject) => {
         const request = db.transaction('photos', 'readonly').objectStore('photos').getAll();
         request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
